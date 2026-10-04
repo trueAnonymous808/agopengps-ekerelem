@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Egységes kérelem → AgOpen KML konverter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://unpkg.com/maplibre-gl@4.5.0/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.5.0/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/proj4@2.11.0/dist/proj4.js"></script>
+<script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://unpkg.com/@mapbox/shp-write@0.4.3/shpwrite.js"></script>
+<style>
+  :root{
+    --soil: #4a3626;
+    --soil-dark: #2e2013;
+    --forest: #2f4632;
+    --forest-dark: #1c2c1e;
+    --wheat: #c99a2e;
+    --wheat-light: #e9c66b;
+    --sky: #4c7a8c;
+    --parchment: #f4efe1;
+    --parchment-hi: #fbf8ef;
+    --line: #d9d0b8;
+    --ink: #2a2420;
+    --ink-soft: #5b5245;
+    --danger: #a14724;
+    --radius: 10px;
+    --shadow: 0 1px 2px rgba(46,32,19,0.06), 0 6px 20px -8px rgba(46,32,19,0.18);
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--parchment);
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(74,54,38,0.07) 1px, transparent 0);
+    background-size: 22px 22px;
+    color: var(--ink);
+    font-family: 'Inter', system-ui, sans-serif;
+    line-height: 1.5;
+    padding-bottom: 60px;
+  }
+  h1,h2,h3{ font-family: 'Fraunces', Georgia, serif; margin: 0 0 6px; color: var(--soil-dark); }
+  a{ color: var(--forest); }
+  code, .mono{ font-family: 'JetBrains Mono', monospace; }
+
+  header.top{
+    background: linear-gradient(180deg, var(--forest) 0%, var(--forest-dark) 100%);
+    color: var(--parchment-hi);
+    padding: 34px 20px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  header.top::after{
+    content:"";
+    position:absolute; inset:0;
+    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 14px);
+    pointer-events:none;
+  }
+  .top-inner{
+    max-width: 920px; margin: 0 auto;
+    display:flex; align-items:center; gap: 22px;
+    position: relative;
+  }
+  .top-inner svg{ flex: 0 0 auto; width: 74px; height: 74px; }
+  .top-inner h1{ color: #fff; font-size: 1.55rem; font-weight:600; margin:0; }
+  .top-inner p{ margin: 6px 0 0; color: #d7e4d5; font-size: 0.95rem; max-width: 56ch; }
+
+  .container{ max-width: 920px; margin: -20px auto 0; padding: 0 20px; position:relative; }
+
+  .card{
+    background: var(--parchment-hi);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 22px 24px;
+    margin-bottom: 20px;
+  }
+
+  details.guide summary{
+    cursor: pointer;
+    font-family:'Fraunces', serif;
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: var(--soil-dark);
+    list-style: none;
+    display:flex; align-items:center; gap:8px;
+  }
+  details.guide summary::-webkit-details-marker{ display:none; }
+  details.guide summary::before{
+    content:"▸"; color: var(--wheat); transition: transform .15s ease; display:inline-block;
+  }
+  details.guide[open] summary::before{ transform: rotate(90deg); }
+  .guide-body{ margin-top: 14px; font-size: 0.94rem; color: var(--ink-soft); }
+  .guide-body strong{ color: var(--danger); }
+  .step-num{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:20px; height:20px; border-radius:50%;
+    background: var(--wheat); color:#2e2013; font-size:0.75rem; font-weight:700;
+    margin-right:6px;
+  }
+
+  textarea{
+    width: 100%;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82rem;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: #fffdf7;
+    resize: vertical;
+    color: var(--ink);
+  }
+  textarea:focus, input:focus, button:focus-visible{
+    outline: 2px solid var(--sky); outline-offset: 1px;
+  }
+  textarea::placeholder{ color: #b3a98d; }
+
+  .btn{
+    font-family:'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 0.88rem;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    display:inline-flex; align-items:center; gap:7px;
+    transition: transform .05s ease, filter .15s ease;
+  }
+  .btn:active{ transform: translateY(1px); }
+  .btn-primary{ background: var(--forest); color:#fff; }
+  .btn-primary:hover{ filter: brightness(1.1); }
+  .btn-gold{ background: var(--wheat); color: #2e2013; }
+  .btn-gold:hover{ filter: brightness(1.06); }
+  .btn-outline{ background: transparent; border-color: var(--line); color: var(--soil-dark); }
+  .btn-outline:hover{ background: #efe8d4; }
+  .btn-sm{ padding: 6px 11px; font-size: 0.78rem; border-radius: 6px; }
+  .btn:disabled{ opacity: 0.45; cursor: not-allowed; }
+
+  .toolbar{ display:flex; flex-wrap:wrap; gap:10px; margin-bottom: 16px; }
+
+  .status{
+    font-size: 0.85rem; margin-top: 10px; min-height: 1.2em;
+    display:flex; align-items:center; gap:8px;
+  }
+  .status.ok{ color: var(--forest); }
+  .status.err{ color: var(--danger); }
+  .status .dot{ width:7px; height:7px; border-radius:50%; background: currentColor; }
+
+  #resultsSection[hidden]{ display:none; }
+
+  .summary-bar{
+    display:flex; flex-wrap:wrap; gap: 18px; align-items:baseline;
+    padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px dashed var(--line);
+  }
+  .summary-bar .stat{ font-size: 0.85rem; color: var(--ink-soft); }
+  .summary-bar .stat b{ font-family:'Fraunces', serif; font-size: 1.15rem; color: var(--soil-dark); display:block; }
+
+  .parcel-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .parcel-card{
+    border: 1px solid var(--line); border-radius: 8px; background: #fffdf7;
+    padding: 14px; display:flex; flex-direction:column; gap: 9px;
+  }
+  .parcel-card .swatch{ width:14px; height:14px; border-radius: 3px; display:inline-block; margin-right:6px; vertical-align:-2px; }
+  .parcel-card .name-row{ display:flex; align-items:center; gap:6px; }
+  .parcel-card input[type=text]{
+    flex:1; font-family:'Inter'; font-weight:600; font-size:0.92rem;
+    padding: 6px 8px; border-radius:6px; border:1px solid var(--line); background:#fff;
+  }
+  .parcel-card .meta{ font-size: 0.78rem; color: var(--ink-soft); display:flex; gap:12px; flex-wrap:wrap; }
+  .parcel-card .meta span b{ color: var(--soil-dark); }
+  .parcel-card .actions{ display:flex; flex-wrap:wrap; gap:6px; margin-top:2px; }
+  .parcel-card.flagged{ border-color: var(--danger); }
+  .parcel-card .warn{ font-size: 0.74rem; color: var(--danger); }
+
+  #map{ height: 420px; border-radius: 8px; border: 1px solid var(--line); background:#e7e2d1; }
+
+  footer.foot{
+    max-width: 920px; margin: 30px auto 0; padding: 0 20px;
+    font-size: 0.8rem; color: var(--ink-soft); text-align:center;
+  }
+
+  @media (max-width: 600px){
+    .top-inner{ flex-direction:column; text-align:center; }
+    .card{ padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-inner">
+    <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <polygon points="18,72 24,30 58,14 88,46 74,86" stroke="#e9c66b" stroke-width="2.4" stroke-dasharray="1 7" stroke-linecap="round" fill="rgba(233,198,107,0.08)"/>
+      <g fill="#e9c66b">
+        <circle cx="18" cy="72" r="3.4"/>
+        <circle cx="24" cy="30" r="3.4"/>
+        <circle cx="58" cy="14" r="3.4"/>
+        <circle cx="88" cy="46" r="3.4"/>
+        <circle cx="74" cy="86" r="3.4"/>
+      </g>
+      <g font-family="JetBrains Mono, monospace" font-size="8" fill="#d7e4d5">
+        <text x="6" y="70">1</text>
+        <text x="12" y="27">2</text>
+        <text x="60" y="9">3</text>
+        <text x="91" y="44">4</text>
+        <text x="76" y="95">5</text>
+      </g>
+    </svg>
+    <div>
+      <h1>Egységes kérelem → AgOpen KML konverter</h1>
+      <p>Illeszd be a MePAR / e-kérelem térképszolgáltatás válaszát, és pillanatok alatt megkapod a parcellák WGS84 koordinátáit, KML és shapefile formátumban — helyben számolva, szerver nélkül.</p>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <details class="guide">
+      <summary>Útmutató — honnan szerezzem meg az adatot?</summary>
+      <div class="guide-body">
+        <p><span class="step-num">1</span> Nyisd meg a MePAR saját adat térképnézetét:<br>
+        <a href="https://e-kerelem.mvh.allamkincstar.gov.hu/enter/webform/mekir/sajatadat/BizonylatElovalasztoMekirSajatAdat.xhtml" target="_blank" rel="noopener">BizonylatElovalasztoMekirSajatAdat megnyitása ↗</a></p>
+
+        <p><span class="step-num">2</span> Nyomd meg az <strong>F12</strong> billentyűt a fejlesztői eszközök megnyitásához. Ez mutatja, milyen adatokat küld a szerver a böngészőnek. Ha nem látsz semmit, frissítsd az oldalt, majd nyisd meg a <strong>Hálózat (Network)</strong> fület.</p>
+
+        <p><span class="step-num">3</span> Keresd meg a <code>BizonylatElovalasztoMekirSajatAdat</code> kérést, és másold ki a teljes válasz szövegét (Response).</p>
+
+        <p><span class="step-num">4</span> A <strong>villanyoszlopokat egyelőre hagyd figyelmen kívül</strong> — ezek a poligonok nem elég pontosak multi-KML-ként importálva.</p>
+
+        <p>Ha megvan a szöveg, illeszd be alább, majd kattints a <em>Feldolgozás</em> gombra.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>1. Beillesztés</h2>
+    <textarea id="EOVIN" rows="6" placeholder="&lt;?xml version='1.0' encoding='UTF-8'?&gt;&#10;&lt;partial-response&gt;&lt;changes&gt;...addFeatureToVectorLayer('tter','POLYGON ((...))','','1', '');..."></textarea>
+    <div class="toolbar" style="margin-top:10px; margin-bottom:0;">
+      <button class="btn btn-primary" id="parseBtn" onclick="handleParse()">⚙ Feldolgozás</button>
+      <button class="btn btn-outline" id="clearBtn" onclick="handleClearInput()">Törlés</button>
+    </div>
+    <div class="status" id="parseStatus"></div>
+  </div>
+
+  <div class="card" id="resultsSection" hidden>
+    <h2>2. Parcellák</h2>
+    <div class="summary-bar" id="summaryBar"></div>
+
+    <div class="toolbar">
+      <button class="btn btn-gold" onclick="showAllOnMap()">🗺 Összes megjelenítése térképen</button>
+      <button class="btn btn-gold" onclick="downloadCombinedKML()">⬇ Összes letöltése egy KML-ben</button>
+      <button class="btn btn-gold" onclick="downloadCombinedShapefile()">⬇ Összes letöltése Shapefile-ban (.zip)</button>
+      <button class="btn btn-outline" onclick="clearMapLayers()">Térkép törlése</button>
+    </div>
+
+    <div id="parcelList" class="parcel-grid"></div>
+
+    <div id="map"></div>
+    <div class="status" id="mapStatus"></div>
+  </div>
+
+</div>
+
+<footer class="foot">
+  Az EOV → WGS84 átszámítás helyben, a böngészőben történik (nincs külső szerverhívés pontonként), így nagy táblák esetén is másodpercek alatt kész az eredmény.
+</footer>
+
+<script>
+'use strict';
+
+/* ---------------------------------------------------------------
+   Coordinate system: EOV (HD72 / EOV, EPSG:23700)
+   Converted locally with proj4 instead of calling a remote API
+   per point — this is the main speed win over the old version.
+----------------------------------------------------------------*/
+proj4.defs('EOV', '+proj=somerc +lat_0=47.14439372222222 +lon_0=19.04857177777778 ' +
+  '+k_0=0.99993 +x_0=650000 +y_0=200000 +ellps=GRS67 ' +
+  '+towgs84=52.17,-71.82,-14.9,0,0,0,0 +units=m +no_defs +type=crs');
+
+function eovToWgs84(y, x){
+  // proj4 returns [lon, lat]
+  return proj4('EOV', 'WGS84', [y, x]);
+}
+
+/* ---------------------------------------------------------------
+   Parsing the pasted server response
+----------------------------------------------------------------*/
+function parseEkerelem(text){
+  const re = /addFeatureToVectorLayer\(\s*'tter'\s*,\s*'POLYGON\s*\(\((.*?)\)\)'\s*,\s*''\s*,\s*'(\d+)'/g;
+  const parcels = [];
+  let match;
+
+  while ((match = re.exec(text)) !== null) {
+    const body = match[1];
+    const id = match[2];
+
+    const ringsRaw = body.split(/\)\s*,\s*\(/);
+    const rings = ringsRaw.map(r => {
+      return r.replace(/^\(/, '').replace(/\)$/, '')
+        .split(',')
+        .map(pair => pair.trim())
+        .filter(Boolean)
+        .map(pair => pair.split(/\s+/).map(Number))
+        .filter(p => p.length === 2 && !isNaN(p[0]) && !isNaN(p[1]));
+    }).filter(r => r.length >= 3);
+
+    if (!rings.length) continue;
+
+    parcels.push({
+      id,
+      name: id,
+      outerEOV: rings[0],
+      innerEOVs: rings.slice(1)
+    });
+  }
+  return parcels;
+}
+
+/* ---------------------------------------------------------------
+   Geometry helpers
+----------------------------------------------------------------*/
+function ringArea(ring){
+  // Planar shoelace formula. Ring points are [Y, X] in EOV metres,
+  // so this gives an exact area (no re-projection distortion).
+  let sum = 0;
+  for (let i = 0; i < ring.length; i++){
+    const [y1, x1] = ring[i];
+    const [y2, x2] = ring[(i + 1) % ring.length];
+    sum += y1 * x2 - y2 * x1;
+  }
+  return Math.abs(sum) / 2;
+}
+
+function computeAreaHa(outer, inners){
+  let area = ringArea(outer);
+  for (const inner of inners) area -= ringArea(inner);
+  return Math.max(area, 0) / 10000;
+}
+
+function closeRing(ring){
+  if (!ring.length) return ring;
+  const first = ring[0], last = ring[ring.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) return ring.concat([first]);
+  return ring;
+}
+
+function escapeXML(s){
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function safeFileName(s){
+  return String(s).trim().replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || 'parcella';
+}
+
+const PALETTE = ['#4c7a8c', '#c99a2e', '#8a5a3b', '#5a7d4a', '#a14724', '#6b5b95', '#3b7a7a', '#b0763c'];
+function colorForIndex(i){ return PALETTE[i % PALETTE.length]; }
+
+/* ---------------------------------------------------------------
+   Conversion of a parsed parcel: EOV -> WGS84 + area, done once
+   synchronously (no network round trip)
+----------------------------------------------------------------*/
+function convertParcel(p, index){
+  const conv = ring => ring.map(([y, x]) => eovToWgs84(y, x));
+  p.outerWGS = conv(p.outerEOV);
+  p.innerWGS = p.innerEOVs.map(conv);
+  p.areaHa = computeAreaHa(p.outerEOV, p.innerEOVs);
+  p.pointCount = p.outerEOV.length;
+  p.color = colorForIndex(index);
+  p.suspicious = p.pointCount < 3 || p.areaHa <= 0;
+}
+
+/* ---------------------------------------------------------------
+   App state
+----------------------------------------------------------------*/
+let parcels = [];
+let map = null;
+let mapReady = false;
+const addedLayers = new Set();
+
+/* ---------------------------------------------------------------
+   Parse button handler
+----------------------------------------------------------------*/
+function setStatus(el, msg, kind){
+  el.className = 'status' + (kind ? (' ' + kind) : '');
+  el.innerHTML = msg ? ('<span class="dot"></span>' + msg) : '';
+}
+
+function handleClearInput(){
+  document.getElementById('EOVIN').value = '';
+  setStatus(document.getElementById('parseStatus'), '', '');
+}
+
+function handleParse(){
+  const statusEl = document.getElementById('parseStatus');
+  const raw = document.getElementById('EOVIN').value;
+
+  if (!raw || raw.trim().length === 0){
+    setStatus(statusEl, 'Nincs beillesztett adat.', 'err');
+    return;
+  }
+
+  const t0 = performance.now();
+  const parsed = parseEkerelem(raw);
+
+  if (parsed.length === 0){
+    setStatus(statusEl, 'Nem találtam területi poligont a beillesztett szövegben. Ellenőrizd, hogy a teljes választ másoltad-e ki.', 'err');
+    document.getElementById('resultsSection').hidden = true;
+    return;
+  }
+
+  parsed.forEach((p, i) => convertParcel(p, i));
+  parcels = parsed;
+
+  const dt = (performance.now() - t0).toFixed(1);
+  const totalHa = parcels.reduce((s, p) => s + p.areaHa, 0);
+  setStatus(statusEl,
+    parcels.length + ' parcella feldolgozva, ' + dt + ' ms alatt (helyi számítás, szerverhívás nélkül).',
+    'ok');
+
+  renderParcels();
+  document.getElementById('resultsSection').hidden = false;
+  document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ---------------------------------------------------------------
+   Rendering the parcel cards
+----------------------------------------------------------------*/
+function renderParcels(){
+  const list = document.getElementById('parcelList');
+  list.innerHTML = '';
+
+  parcels.forEach((p, i) => {
+    const card = document.createElement('div');
+    card.className = 'parcel-card' + (p.suspicious ? ' flagged' : '');
+
+    const nameRow = document.createElement('div');
+    nameRow.className = 'name-row';
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.background = p.color;
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = p.name;
+    nameInput.addEventListener('input', e => { p.name = e.target.value; });
+    nameRow.appendChild(swatch);
+    nameRow.appendChild(nameInput);
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.innerHTML =
+      '<span>Terület: <b>' + p.areaHa.toFixed(3) + ' ha</b></span>' +
+      '<span>Pontok: <b>' + p.pointCount + '</b></span>' +
+      (p.innerEOVs.length ? '<span>Belső határ: <b>' + p.innerEOVs.length + '</b></span>' : '');
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    actions.appendChild(mkBtn('Térképen', () => showParcelOnMap(i)));
+    actions.appendChild(mkBtn('KML', () => downloadParcelKML(i)));
+    actions.appendChild(mkBtn('Shapefile', () => downloadParcelShapefile(i)));
+
+    card.appendChild(nameRow);
+    card.appendChild(meta);
+    if (p.suspicious){
+      const warn = document.createElement('div');
+      warn.className = 'warn';
+      warn.textContent = '⚠ Gyanús geometria (kevés pont vagy nulla terület) — ellenőrizd a bemenetet.';
+      card.appendChild(warn);
+    }
+    card.appendChild(actions);
+    list.appendChild(card);
+  });
+
+  const totalHa = parcels.reduce((s, p) => s + p.areaHa, 0);
+  const bar = document.getElementById('summaryBar');
+  bar.innerHTML =
+    '<div class="stat"><b>' + parcels.length + '</b>parcella</div>' +
+    '<div class="stat"><b>' + totalHa.toFixed(3) + ' ha</b>összterület</div>';
+}
+
+function mkBtn(label, onClick){
+  const b = document.createElement('button');
+  b.className = 'btn btn-outline btn-sm';
+  b.textContent = label;
+  b.onclick = onClick;
+  return b;
+}
+
+/* ---------------------------------------------------------------
+   Map (MapLibre GL, free OSM raster tiles — no API key needed)
+----------------------------------------------------------------*/
+function ensureMap(){
+  if (map) return;
+  map = new maplibregl.Map({
+    container: 'map',
+    style: {
+      version: 8,
+      sources: {
+        osm: {
+          type: 'raster',
+          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          attribution: '&copy; OpenStreetMap contributors'
+        }
+      },
+      layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
+    },
+    center: [19.51, 46.88],
+    zoom: 12
+  });
+  map.addControl(new maplibregl.NavigationControl(), 'top-right');
+  map.on('load', () => { mapReady = true; });
+}
+
+function runOnMapReady(fn){
+  ensureMap();
+  if (mapReady) fn();
+  else map.once('load', fn);
+}
+
+function parcelToGeoJSON(p){
+  const outer = closeRing(p.outerWGS);
+  const inners = p.innerWGS.map(closeRing);
+  return {
+    type: 'Feature',
+    properties: { name: p.name, area_ha: Number(p.areaHa.toFixed(4)) },
+    geometry: { type: 'Polygon', coordinates: [outer].concat(inners) }
+  };
+}
+
+function addParcelLayer(p, i){
+  const srcId = 'parcel-' + i;
+  if (addedLayers.has(srcId)) return;
+  const gj = parcelToGeoJSON(p);
+  map.addSource(srcId, { type: 'geojson', data: gj });
+  map.addLayer({
+    id: srcId + '-fill', type: 'fill', source: srcId,
+    paint: { 'fill-color': p.color, 'fill-opacity': 0.35 }
+  });
+  map.addLayer({
+    id: srcId + '-line', type: 'line', source: srcId,
+    paint: { 'line-color': p.color, 'line-width': 2 }
+  });
+  map.on('click', srcId + '-fill', () => {
+    new maplibregl.Popup()
+      .setLngLat(bboxCenter(p.outerWGS))
+      .setHTML('<strong>' + escapeXML(p.name) + '</strong><br>' + p.areaHa.toFixed(3) + ' ha')
+      .addTo(map);
+  });
+  addedLayers.add(srcId);
+}
+
+function bboxOf(coordsArrays){
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const ring of coordsArrays){
+    for (const [x, y] of ring){
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  return [[minX, minY], [maxX, maxY]];
+}
+
+function bboxCenter(ring){
+  const b = bboxOf([ring]);
+  return [(b[0][0] + b[1][0]) / 2, (b[0][1] + b[1][1]) / 2];
+}
+
+function showParcelOnMap(i){
+  const statusEl = document.getElementById('mapStatus');
+  runOnMapReady(() => {
+    document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    addParcelLayer(parcels[i], i);
+    const b = bboxOf([parcels[i].outerWGS]);
+    map.fitBounds(b, { padding: 60, maxZoom: 17, duration: 800 });
+    setStatus(statusEl, '"' + parcels[i].name + '" megjelenítve a térképen.', 'ok');
+  });
+}
+
+function showAllOnMap(){
+  const statusEl = document.getElementById('mapStatus');
+  if (parcels.length === 0) return;
+  runOnMapReady(() => {
+    document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    parcels.forEach((p, i) => addParcelLayer(p, i));
+    const allRings = parcels.map(p => p.outerWGS);
+    const b = bboxOf(allRings);
+    map.fitBounds(b, { padding: 50, maxZoom: 16, duration: 800 });
+    setStatus(statusEl, 'Mind a(z) ' + parcels.length + ' parcella megjelenítve.', 'ok');
+  });
+}
+
+function clearMapLayers(){
+  if (!map) return;
+  addedLayers.forEach(srcId => {
+    if (map.getLayer(srcId + '-fill')) map.removeLayer(srcId + '-fill');
+    if (map.getLayer(srcId + '-line')) map.removeLayer(srcId + '-line');
+    if (map.getSource(srcId)) map.removeSource(srcId);
+  });
+  addedLayers.clear();
+  setStatus(document.getElementById('mapStatus'), 'Térkép törölve.', '');
+}
+
+/* ---------------------------------------------------------------
+   KML export
+----------------------------------------------------------------*/
+function ringToKMLCoords(ring){
+  return ring.map(([lon, lat]) => lon.toFixed(7) + ',' + lat.toFixed(7) + ',0').join(' ');
+}
+
+function parcelToKMLPlacemark(p){
+  const outer = closeRing(p.outerWGS);
+  const inners = p.innerWGS.map(closeRing);
+  let innerXML = '';
+  for (const ring of inners){
+    innerXML += '        <innerBoundaryIs><LinearRing><coordinates>' +
+      ringToKMLCoords(ring) + '</coordinates></LinearRing></innerBoundaryIs>\n';
+  }
+  return '  <Placemark>\n' +
+    '    <name>' + escapeXML(p.name) + '</name>\n' +
+    '    <Style><PolyStyle><color>80' + p.color.replace('#', '') + '</color><fill>1</fill><outline>1</outline></PolyStyle></Style>\n' +
+    '    <Polygon>\n' +
+    '      <tessellate>1</tessellate>\n' +
+    '      <outerBoundaryIs><LinearRing><coordinates>' + ringToKMLCoords(outer) + '</coordinates></LinearRing></outerBoundaryIs>\n' +
+    innerXML +
+    '    </Polygon>\n' +
+    '  </Placemark>\n';
+}
+
+function triggerDownload(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadParcelKML(i){
+  const p = parcels[i];
+  const kml = '<?xml version="1.0" encoding="utf-8"?>\n' +
+    '<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n' +
+    parcelToKMLPlacemark(p) +
+    '</Document>\n</kml>';
+  triggerDownload(new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' }), safeFileName(p.name) + '.kml');
+}
+
+function downloadCombinedKML(){
+  if (parcels.length === 0) return;
+  let body = '';
+  parcels.forEach(p => { body += parcelToKMLPlacemark(p); });
+  const kml = '<?xml version="1.0" encoding="utf-8"?>\n' +
+    '<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n' + body + '</Document>\n</kml>';
+  const firstName = safeFileName(parcels[0].name);
+  triggerDownload(new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' }),
+    'tobbterulet__' + firstName + '_estarsai.kml');
+}
+
+/* ---------------------------------------------------------------
+   Shapefile export (zip) via shp-write + JSZip
+----------------------------------------------------------------*/
+function base64ToArrayBuffer(base64){
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+  return bytes;
+}
+
+async function downloadParcelShapefile(i){
+  const p = parcels[i];
+  const gj = { type: 'FeatureCollection', features: [parcelToGeoJSON(p)] };
+  const fileName = safeFileName(p.name);
+  try{
+    const base64 = await shpwrite.zip(gj, { folder: fileName, types: { polygon: fileName, point: fileName, polyline: fileName } });
+    const bytes = base64ToArrayBuffer(base64);
+    triggerDownload(new Blob([bytes], { type: 'application/zip' }), fileName + '.zip');
+  } catch(err){
+    console.error(err);
+    setStatus(document.getElementById('mapStatus'), 'Hiba a shapefile létrehozásakor: ' + err.message, 'err');
+  }
+}
+
+async function downloadCombinedShapefile(){
+  if (parcels.length === 0) return;
+  const gj = { type: 'FeatureCollection', features: parcels.map(parcelToGeoJSON) };
+  try{
+    const base64 = await shpwrite.zip(gj, { folder: 'parcellak', types: { polygon: 'parcellak', point: 'parcellak', polyline: 'parcellak' } });
+    const bytes = base64ToArrayBuffer(base64);
+    triggerDownload(new Blob([bytes], { type: 'application/zip' }), 'parcellak.zip');
+  } catch(err){
+    console.error(err);
+    setStatus(document.getElementById('mapStatus'), 'Hiba a shapefile létrehozásakor: ' + err.message, 'err');
+  }
+}
+</script>
+</body>
+</html>
